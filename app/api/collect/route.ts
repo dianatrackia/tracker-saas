@@ -28,7 +28,7 @@ export async function OPTIONS() {
 // ── Validation schema ────────────────────────────────────────────────────
 const collectSchema = z.object({
   tid:      z.string().startsWith('trk_'),
-  event:    z.enum(['page_view','scroll_25','scroll_50','scroll_75','scroll_100','lead','purchase']),
+  event:    z.enum(['page_view','scroll_25','scroll_50','scroll_75','scroll_100','lead','purchase']).or(z.string()),
   vid:      z.string().min(1),
   sid:      z.string().min(1),
   fp:       z.string().optional(),

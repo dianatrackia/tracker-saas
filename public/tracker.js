@@ -80,6 +80,124 @@
     return (hash >>> 0).toString(36);
   }
 
+  // ── Traffic Source Auto-Detection ────────────────────────────────────
+  // Identifies traffic source from click IDs, UTMs, or referrer — no UTMs required
+  function detectTrafficSource(params, referrer) {
+    // 1. Click IDs are the most reliable signal (paid traffic)
+    if (params.get('fbclid'))                          return { source: 'facebook', medium: 'paid' };
+    if (params.get('gclid') || params.get('gbraid') || params.get('wbraid'))
+                                                       return { source: 'google',   medium: 'paid' };
+    if (params.get('ttclid'))                          return { source: 'tiktok',   medium: 'paid' };
+    if (params.get('msclkid'))                         return { source: 'bing',     medium: 'paid' };
+    if (params.get('twclid'))                          return { source: 'twitter',  medium: 'paid' };
+    if (params.get('li_fat_id'))                       return { source: 'linkedin', medium: 'paid' };
+
+    // 2. Explicit UTMs override referrer
+    var utmSource = params.get('utm_source');
+    if (utmSource) return {
+      source: utmSource,
+      medium: params.get('utm_medium') || 'unknown',
+    };
+
+    // 3. Referrer-based organic/social detection
+    if (!referrer) return { source: 'direct', medium: 'none' };
+    try {
+      var host = new URL(referrer).hostname.toLowerCase().replace(/^www\./, '');
+      if (/facebook\.com|fb\.com|instagram\.com|messenger\.com/.test(host))
+        return { source: 'facebook',  medium: 'social' };
+      if (/google\.[a-z]+/.test(host))
+        return { source: 'google',    medium: 'organic' };
+      if (/bing\.com|msn\.com/.test(host))
+        return { source: 'bing',      medium: 'organic' };
+      if (/yahoo\.com/.test(host))
+        return { source: 'yahoo',     medium: 'organic' };
+      if (/tiktok\.com/.test(host))
+        return { source: 'tiktok',    medium: 'social' };
+      if (/youtube\.com|youtu\.be/.test(host))
+        return { source: 'youtube',   medium: 'social' };
+      if (/twitter\.com|t\.co|x\.com/.test(host))
+        return { source: 'twitter',   medium: 'social' };
+      if (/linkedin\.com/.test(host))
+        return { source: 'linkedin',  medium: 'social' };
+      if (/pinterest\.com/.test(host))
+        return { source: 'pinterest', medium: 'social' };
+      if (/reddit\.com/.test(host))
+        return { source: 'reddit',    medium: 'social' };
+      if (/mail\.google|mail\.yahoo|outlook\.live|webmail/.test(host))
+        return { source: 'email',     medium: 'email' };
+      return { source: host,          medium: 'referral' };
+    } catch(e) {
+      return { source: 'unknown', medium: 'unknown' };
+    }
+  }
+
+  // ── UTM & Click ID capture ────────────────────────────────────────────
+  function captureUtmsAndClickIds() {
+    var params = new URLSearchParams(window.location.search);
+    var utmKeys = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'];
+    var stored  = {};
+
+    // Restore previously saved UTMs from localStorage
+    try {
+      var saved = localStorage.getItem('__trk_utms');
+      if (saved) stored = JSON.parse(saved);
+    } catch(e) {}
+
+    // Override with fresh UTMs from URL if present
+    var hasNewUtms = false;
+    utmKeys.forEach(function(k) {
+      var v = params.get(k);
+      if (v) { stored[k] = v; hasNewUtms = true; }
+    });
+    if (hasNewUtms) {
+      try { localStorage.setItem('__trk_utms', JSON.stringify(stored)); } catch(e) {}
+    }
+
+    // fbclid → set _fbc cookie (Meta's format: fb.1.<timestamp>.<fbclid>)
+    var fbclid = params.get('fbclid');
+    if (fbclid) {
+      var fbc = 'fb.1.' + Date.now() + '.' + fbclid;
+      setCookie('_fbc', fbc, 90);
+    }
+
+    // gclid → store for Google Ads attribution
+    var gclid = params.get('gclid');
+    if (gclid) {
+      try { localStorage.setItem('__trk_gclid', gclid); } catch(e) {}
+    }
+
+    // _fbp: read existing (set by Meta Pixel) or generate our own
+    var fbp = getCookie('_fbp');
+    if (!fbp) {
+      fbp = 'fb.1.' + Date.now() + '.' + Math.floor(Math.random() * 2147483647);
+      setCookie('_fbp', fbp, 90);
+    }
+
+    // Auto-detect source on first touch (persist in localStorage)
+    var srcData = {};
+    try {
+      var savedSrc = localStorage.getItem('__trk_src');
+      if (savedSrc) {
+        srcData = JSON.parse(savedSrc);
+      } else {
+        srcData = detectTrafficSource(params, document.referrer);
+        localStorage.setItem('__trk_src', JSON.stringify(srcData));
+      }
+    } catch(e) {
+      srcData = detectTrafficSource(params, document.referrer);
+    }
+
+    return {
+      utms:   Object.keys(stored).length ? stored : undefined,
+      fbc:    getCookie('_fbc') || undefined,
+      fbp:    fbp || undefined,
+      source: srcData.source || undefined,
+      medium: srcData.medium || undefined,
+    };
+  }
+
+  var clickData = captureUtmsAndClickIds();
+
   // ── Identity ──────────────────────────────────────────────────────────
   var visitorId = getOrCreate(CONFIG.cookieName, CONFIG.cookieDays);
   var sessionId = getOrCreate(CONFIG.sessionName, CONFIG.sessionMinutes / 1440);
@@ -87,6 +205,19 @@
 
   // ── Send event ────────────────────────────────────────────────────────
   function send(eventName, extra) {
+    // Merge props: clickData (fbc/fbp/utms) + any extra props
+    var baseProps = {};
+    if (clickData.fbc)    baseProps.fbc    = clickData.fbc;
+    if (clickData.fbp)    baseProps.fbp    = clickData.fbp;
+    if (clickData.utms)   baseProps.utms   = clickData.utms;
+    if (clickData.source) baseProps.source = clickData.source;
+    if (clickData.medium) baseProps.medium = clickData.medium;
+
+    var extraWithProps = Object.assign({}, extra || {});
+    if (Object.keys(baseProps).length) {
+      extraWithProps.props = Object.assign({}, baseProps, extra && extra.props ? extra.props : {});
+    }
+
     var payload = Object.assign({
       tid:   CONFIG.tid,
       event: eventName,
@@ -95,7 +226,7 @@
       fp:    fingerprint,
       url:   window.location.href,
       ref:   document.referrer || '',
-    }, extra || {});
+    }, extraWithProps);
 
     // Use sendBeacon when available (non-blocking, survives page unload)
     var data = JSON.stringify(payload);
