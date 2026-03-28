@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 
   let event: Stripe.Event;
   try {
-    const stripe = new Stripe(process.env.STRIPE_WEBHOOK_SECRET!);
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
     event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
   } catch (err: unknown) {
     const error = err as { message?: string };

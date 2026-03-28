@@ -4,6 +4,7 @@
  * and processes them: stores in DB, verifies, and forwards to integrations.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 import { createServiceClient } from '@/lib/supabase/server';
 import { decrypt } from '@/lib/crypto';
 import { sendToMeta } from '@/lib/integrations/meta';
@@ -164,8 +165,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to store event' }, { status: 500 });
     }
 
-    // Process integrations asynchronously (fire-and-forget)
-    processIntegrations(event as TrackingEvent, workspace.id, supabase).catch(console.error);
+    // Process integrations asynchronously — waitUntil keeps the Vercel runtime alive
+    // until the background task completes (prevents premature termination after HTTP response)
+    waitUntil(processIntegrations(event as TrackingEvent, workspace.id, supabase));
 
     // ── Server-side first-party cookie (bypasses Safari ITP 7-day cap) ──────
     // When the request arrives via the customer's CNAME subdomain (e.g. track.theirdomain.com),
