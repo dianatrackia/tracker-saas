@@ -14,13 +14,15 @@ import type { CollectPayload, TrackingEvent } from '@/types';
 import { z } from 'zod';
 
 // ── CORS preflight ───────────────────────────────────────────────────────
-export async function OPTIONS() {
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get('origin') || '*';
   return new NextResponse(null, {
     status: 200,
     headers: {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': origin,
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Credentials': 'true',
     },
   });
 }
@@ -165,7 +167,51 @@ export async function POST(req: NextRequest) {
     // Process integrations asynchronously (fire-and-forget)
     processIntegrations(event as TrackingEvent, workspace.id, supabase).catch(console.error);
 
-    return NextResponse.json({ ok: true, id: event.id });
+    // ── Server-side first-party cookie (bypasses Safari ITP 7-day cap) ──────
+    // When the request arrives via the customer's CNAME subdomain (e.g. track.theirdomain.com),
+    // we set a cookie scoped to their root domain (.theirdomain.com) via Set-Cookie header.
+    // Cookies set by the SERVER are NOT subject to ITP's script-writeable cookie cap.
+    const responseBody = NextResponse.json({ ok: true, id: event.id });
+    const requestHost = req.headers.get('host') || '';
+    const mainAppHost = (process.env.NEXT_PUBLIC_APP_URL || '')
+      .replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+    // Only set server-side cookies when request comes from a custom domain
+    const isCustomDomain =
+      requestHost &&
+      mainAppHost &&
+      !requestHost.includes('localhost') &&
+      requestHost !== mainAppHost &&
+      !requestHost.endsWith('.vercel.app');
+
+    if (isCustomDomain) {
+      // Extract root domain: track.example.com → .example.com
+      const hostWithoutPort = requestHost.split(':')[0];
+      const parts = hostWithoutPort.split('.');
+      const rootDomain = parts.length >= 2
+        ? '.' + parts.slice(-2).join('.')
+        : null;
+
+      if (rootDomain) {
+        // Visitor ID cookie — NOT httpOnly so tracker.js can still read it
+        const existingVid = req.cookies.get('__fpt')?.value;
+        const visitorCookieVal = existingVid || data.vid;
+        responseBody.cookies.set('__fpt', visitorCookieVal, {
+          domain: rootDomain,
+          path: '/',
+          maxAge: 365 * 24 * 60 * 60,  // 1 year
+          sameSite: 'lax',
+          secure: true,
+          httpOnly: false,              // needs to be readable by tracker.js
+        });
+
+        // Also set CORS header so the JS beacon can read the response
+        responseBody.headers.set('Access-Control-Allow-Origin', `https://${hostWithoutPort}`);
+        responseBody.headers.set('Access-Control-Allow-Credentials', 'true');
+      }
+    }
+
+    return responseBody;
   } catch (err) {
     console.error('[collect] Unexpected error:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

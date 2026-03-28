@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { CopySnippetButton } from './copy-button';
+import { CustomDomainSetup } from './custom-domain-setup';
 import { Code2, CheckCircle, Info } from 'lucide-react';
 
 export default async function SnippetPage() {
@@ -17,8 +18,14 @@ export default async function SnippetPage() {
   if (!workspace) redirect('/login');
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://tu-app.vercel.app';
+
+  // If custom domain is configured, show it as the script source
+  const scriptBase = workspace.custom_domain
+    ? `https://${workspace.custom_domain}`
+    : appUrl;
+
   const snippet = `<!-- TrackerSaaS - First Party Tracking -->
-<script src="${appUrl}/tracker.js" data-tid="${workspace.tracking_id}" async></script>`;
+<script src="${scriptBase}/tracker.js" data-tid="${workspace.tracking_id}" async></script>`;
 
   const purchaseSnippet = `<!-- Llamar en tu página de confirmación de compra -->
 <script>
@@ -77,6 +84,14 @@ export default async function SnippetPage() {
           ))}
         </div>
       </div>
+
+      {/* Custom Domain Setup (first-party CNAME proxy) */}
+      <CustomDomainSetup
+        initialDomain={workspace.custom_domain ?? null}
+        initialVerified={workspace.custom_domain_verified ?? false}
+        trackingId={workspace.tracking_id}
+        appUrl={appUrl}
+      />
 
       {/* Tracking ID */}
       <div className="card p-5 mb-6">

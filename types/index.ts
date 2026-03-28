@@ -16,6 +16,9 @@ export interface Workspace {
   domain: string | null;
   tracking_id: string;
   plan: 'free' | 'pro' | 'enterprise';
+  /** Customer's CNAME subdomain, e.g. track.theirdomain.com */
+  custom_domain: string | null;
+  custom_domain_verified: boolean;
   created_at: string;
   updated_at: string;
 }
