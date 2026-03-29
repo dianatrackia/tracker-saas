@@ -110,17 +110,35 @@ export async function PATCH(req: NextRequest) {
     const { testStripeConnection } = await import('@/lib/integrations/stripe-verify');
     result = await testStripeConnection(config as { secret_key: string; webhook_secret: string });
   } else if (integration.type === 'meta') {
-    // Test Meta by fetching pixel info
+    // Test Meta by sending a minimal synthetic event to the CAPI endpoint.
+    // Tokens generated from Events Manager have read_ads_dataset_quality scope,
+    // which is CAPI-only — they cannot read pixel info via GET /{pixel_id}.
+    // Sending to /events is the correct verification for this token type.
     const axios = (await import('axios')).default;
     try {
-      await axios.get(
-        `https://graph.facebook.com/v19.0/${config.pixel_id}`,
-        { params: { access_token: config.access_token } }
+      const payload: Record<string, unknown> = {
+        data: [{
+          event_name: 'PageView',
+          event_time: Math.floor(Date.now() / 1000),
+          event_id: `test_conn_${Date.now()}`,
+          action_source: 'website',
+          user_data: { client_ip_address: '127.0.0.1', client_user_agent: 'TrackerSaaS/test' },
+        }],
+        access_token: config.access_token,
+      };
+      // If test_event_code is configured, include it so events stay in test sandbox
+      if (config.test_event_code) payload.test_event_code = config.test_event_code;
+
+      const res = await axios.post(
+        `https://graph.facebook.com/v19.0/${config.pixel_id}/events`,
+        payload
       );
-      result = { success: true };
+      // CAPI returns { events_received: N } on success
+      const received = (res.data as Record<string, unknown>).events_received;
+      result = { success: true, pixelName: `${received ?? 1} event(s) received by Meta` };
     } catch (err: unknown) {
-      const error = err as { message?: string };
-      result = { success: false, error: error.message };
+      const error = err as { response?: { data?: unknown }; message?: string };
+      result = { success: false, error: JSON.stringify(error.response?.data || error.message) };
     }
   } else {
     result = { success: false, error: 'Unknown integration type' };
