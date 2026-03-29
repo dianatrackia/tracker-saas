@@ -29,6 +29,39 @@ const EVENT_COLORS: Record<string, string> = {
 
 type FilterType = 'all' | 'page_view' | 'scroll_25' | 'scroll_50' | 'scroll_75' | 'scroll_100' | 'lead' | 'purchase';
 
+const SOURCE_COLORS: Record<string, string> = {
+  facebook:  'bg-blue-100 text-blue-700',
+  instagram: 'bg-pink-100 text-pink-700',
+  google:    'bg-yellow-100 text-yellow-700',
+  tiktok:    'bg-slate-900 text-white',
+  organic:   'bg-green-100 text-green-700',
+  direct:    'bg-slate-100 text-slate-600',
+};
+
+function SourceBadge({ properties }: { properties: unknown }) {
+  const props = (properties as Record<string, unknown>) || {};
+  const source = (props.source as string) || (props.utm_source as string) || null;
+  const medium = (props.medium as string) || (props.utm_medium as string) || null;
+  const campaign = (props.utms as Record<string, string>)?.utm_campaign || null;
+
+  if (!source) return <span className="text-slate-400">—</span>;
+
+  const colorClass = SOURCE_COLORS[source.toLowerCase()] || 'bg-slate-100 text-slate-600';
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className={`text-xs font-medium px-2 py-0.5 rounded-full inline-flex w-fit ${colorClass}`}>
+        {source}{medium && medium !== 'none' ? ` / ${medium}` : ''}
+      </span>
+      {campaign && (
+        <span className="text-xs text-slate-400 truncate max-w-[140px]" title={campaign}>
+          {campaign}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function EventsPage() {
   const supabase = createClient();
   const [events, setEvents] = useState<TrackingEvent[]>([]);
@@ -159,6 +192,7 @@ export default function EventsPage() {
             <tr className="border-b border-slate-100 bg-slate-50">
               <th className="text-left px-4 py-3 font-medium text-slate-500">Evento</th>
               <th className="text-left px-4 py-3 font-medium text-slate-500">URL</th>
+              <th className="text-left px-4 py-3 font-medium text-slate-500">Fuente</th>
               <th className="text-left px-4 py-3 font-medium text-slate-500">Email</th>
               <th className="text-left px-4 py-3 font-medium text-slate-500">Valor</th>
               <th className="text-left px-4 py-3 font-medium text-slate-500">Verificado</th>
@@ -168,13 +202,13 @@ export default function EventsPage() {
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-slate-400">
+                <td colSpan={7} className="text-center py-12 text-slate-400">
                   Cargando eventos...
                 </td>
               </tr>
             ) : events.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-12">
+                <td colSpan={7} className="text-center py-12">
                   <Activity className="w-8 h-8 mx-auto mb-2 text-slate-300" />
                   <p className="text-slate-400">No hay eventos{filter !== 'all' ? ` de tipo "${EVENT_LABELS[filter]}"` : ''}.</p>
                 </td>
@@ -187,12 +221,15 @@ export default function EventsPage() {
                       {EVENT_LABELS[event.event_name] || event.event_name}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-600 max-w-xs truncate">
+                  <td className="px-4 py-3 text-slate-600 max-w-[160px] truncate">
                     {event.url ? (
                       <span title={event.url}>
                         {new URL(event.url).pathname}
                       </span>
                     ) : '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <SourceBadge properties={event.properties} />
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {event.email || '—'}
