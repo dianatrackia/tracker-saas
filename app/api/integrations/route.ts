@@ -98,7 +98,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to decrypt config' }, { status: 500 });
   }
 
-  let result: { success: boolean; error?: string; listName?: string; accountName?: string };
+  let result: { success: boolean; error?: string; listName?: string; accountName?: string; pixelName?: string };
 
   if (integration.type === 'activecampaign') {
     const { testACConnection } = await import('@/lib/integrations/activecampaign');
