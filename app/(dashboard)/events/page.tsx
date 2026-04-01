@@ -40,23 +40,46 @@ const SOURCE_COLORS: Record<string, string> = {
 
 function SourceBadge({ properties }: { properties: unknown }) {
   const props = (properties as Record<string, unknown>) || {};
-  const source = (props.source as string) || (props.utm_source as string) || null;
-  const medium = (props.medium as string) || (props.utm_medium as string) || null;
-  const campaign = (props.utms as Record<string, string>)?.utm_campaign || null;
+  const source   = (props.source as string) || null;
+  const medium   = (props.medium as string) || null;
+  const utms     = (props.utms as Record<string, string>) || {};
+  const campaign = utms.utm_campaign || null;
+  const adset    = utms.utm_term    || null;   // conjunto de anuncios
+  const ad       = utms.utm_content || null;   // anuncio específico
 
   if (!source) return <span className="text-slate-400">—</span>;
 
   const colorClass = SOURCE_COLORS[source.toLowerCase()] || 'bg-slate-100 text-slate-600';
 
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className={`text-xs font-medium px-2 py-0.5 rounded-full inline-flex w-fit ${colorClass}`}>
+    <div className="flex flex-col gap-1 min-w-[160px]">
+      {/* Fuente / Medio */}
+      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full inline-flex w-fit ${colorClass}`}>
         {source}{medium && medium !== 'none' ? ` / ${medium}` : ''}
       </span>
+
+      {/* Campaña */}
       {campaign && (
-        <span className="text-xs text-slate-400 truncate max-w-[140px]" title={campaign}>
-          {campaign}
-        </span>
+        <div className="flex items-start gap-1">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide w-16 shrink-0 pt-px">Campaña</span>
+          <span className="text-xs text-slate-600 font-medium truncate max-w-[160px]" title={campaign}>{campaign}</span>
+        </div>
+      )}
+
+      {/* Conjunto de anuncios */}
+      {adset && (
+        <div className="flex items-start gap-1">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide w-16 shrink-0 pt-px">Conjunto</span>
+          <span className="text-xs text-slate-500 truncate max-w-[160px]" title={adset}>{adset}</span>
+        </div>
+      )}
+
+      {/* Anuncio */}
+      {ad && (
+        <div className="flex items-start gap-1">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide w-16 shrink-0 pt-px">Anuncio</span>
+          <span className="text-xs text-slate-500 truncate max-w-[160px]" title={ad}>{ad}</span>
+        </div>
       )}
     </div>
   );
