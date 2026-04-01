@@ -16,14 +16,15 @@ import { z } from 'zod';
 
 // ── CORS preflight ───────────────────────────────────────────────────────
 export async function OPTIONS(req: NextRequest) {
-  const origin = req.headers.get('origin') || '*';
+  const origin = req.headers.get('origin');
+  // Use * for null origins (file:// local pages) so local test pages work
+  const allowOrigin = (!origin || origin === 'null') ? '*' : origin;
   return new NextResponse(null, {
     status: 200,
     headers: {
-      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Origin': allowOrigin,
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Allow-Credentials': 'true',
     },
   });
 }
@@ -174,6 +175,14 @@ export async function POST(req: NextRequest) {
     // we set a cookie scoped to their root domain (.theirdomain.com) via Set-Cookie header.
     // Cookies set by the SERVER are NOT subject to ITP's script-writeable cookie cap.
     const responseBody = NextResponse.json({ ok: true, id: event.id });
+
+    // Always set CORS so file:// pages and any origin can read the response
+    const reqOrigin = req.headers.get('origin');
+    const allowOrigin = (!reqOrigin || reqOrigin === 'null') ? '*' : reqOrigin;
+    responseBody.headers.set('Access-Control-Allow-Origin', allowOrigin);
+    responseBody.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    responseBody.headers.set('Access-Control-Allow-Headers', 'Content-Type');
+
     const requestHost = req.headers.get('host') || '';
     const mainAppHost = (process.env.NEXT_PUBLIC_APP_URL || '')
       .replace(/^https?:\/\//, '').replace(/\/$/, '');
