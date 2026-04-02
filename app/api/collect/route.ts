@@ -216,6 +216,33 @@ export async function POST(req: NextRequest) {
           httpOnly: false,              // needs to be readable by tracker.js
         });
 
+        // Server-set _fbc / _fbp (bypasses Safari ITP 7-day JS cookie limit — WalkerOS pattern)
+        // Cookies written via Set-Cookie header are treated as server-set and are NOT capped by ITP.
+        const FBC_RE = /^fb\.1\.\d{10,16}\.[A-Za-z0-9_\-]{1,200}$/;
+        const FBP_RE = /^fb\.1\.\d+\.\d+$/;
+        const rawFbc = (data.props?.fbc as string) || null;
+        const rawFbp = (data.props?.fbp as string) || null;
+        if (rawFbc && FBC_RE.test(rawFbc)) {
+          responseBody.cookies.set('_fbc', rawFbc, {
+            domain: rootDomain,
+            path: '/',
+            maxAge: 90 * 24 * 60 * 60,   // 90 days (Meta standard)
+            sameSite: 'lax',
+            secure: true,
+            httpOnly: false,              // readable by Meta pixel if present
+          });
+        }
+        if (rawFbp && FBP_RE.test(rawFbp)) {
+          responseBody.cookies.set('_fbp', rawFbp, {
+            domain: rootDomain,
+            path: '/',
+            maxAge: 90 * 24 * 60 * 60,
+            sameSite: 'lax',
+            secure: true,
+            httpOnly: false,
+          });
+        }
+
         // Also set CORS header so the JS beacon can read the response
         responseBody.headers.set('Access-Control-Allow-Origin', `https://${hostWithoutPort}`);
         responseBody.headers.set('Access-Control-Allow-Credentials', 'true');

@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart2, Activity, Zap, Code2 } from 'lucide-react';
+import { BarChart2, Activity, Zap, Code2, TrendingUp } from 'lucide-react';
 
 const navItems = [
-  { href: '/dashboard',     label: 'Resumen',        icon: BarChart2 },
-  { href: '/events',        label: 'Eventos',         icon: Activity },
-  { href: '/integrations',  label: 'Integraciones',   icon: Zap },
-  { href: '/snippet',       label: 'Instalar Snippet', icon: Code2 },
+  { href: '/dashboard',     label: 'Resumen',          icon: BarChart2 },
+  { href: '/campaigns',     label: 'Campañas',          icon: TrendingUp },
+  { href: '/events',        label: 'Eventos',           icon: Activity },
+  { href: '/integrations',  label: 'Integraciones',     icon: Zap },
+  { href: '/snippet',       label: 'Instalar Snippet',  icon: Code2 },
 ];
 
 export function NavLinks() {
