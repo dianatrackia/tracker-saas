@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
@@ -37,7 +37,8 @@ const MANUAL_FORMS: Record<string, { key: string; label: string; placeholder: st
 };
 
 // ── Main Page ───────────────────────────────────────────────────────────────────
-export default function IntegrationsPage() {
+// Separated so useSearchParams is inside a Suspense boundary (required by Next.js 14)
+function IntegrationsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
@@ -649,5 +650,19 @@ export default function IntegrationsPage() {
 
       </div>
     </div>
+  );
+}
+
+// Suspense wrapper — required because IntegrationsContent uses useSearchParams()
+// Without this, Next.js 14 causes a hydration mismatch on server render
+export default function IntegrationsPage() {
+  return (
+    <Suspense fallback={
+      <div className="p-8 flex items-center justify-center h-48">
+        <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+      </div>
+    }>
+      <IntegrationsContent />
+    </Suspense>
   );
 }
