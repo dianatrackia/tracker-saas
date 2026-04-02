@@ -20,15 +20,29 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { data, error } = await supabase
+  const serviceClient = createServiceClient();
+  const { data, error } = await serviceClient
     .from('integrations')
-    .select('id, workspace_id, type, enabled, last_tested, created_at, updated_at')
+    .select('id, workspace_id, type, enabled, config, last_tested, created_at, updated_at')
     .order('type');
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Return without decrypted config values — only show which fields exist
-  return NextResponse.json({ integrations: data });
+  // Decrypt config just enough to expose safe display fields (never raw keys)
+  const sanitized = (data || []).map(row => {
+    let displayName: string | null = null;
+    let connectionMethod: string = 'api_key';
+    try {
+      const cfg = JSON.parse(decrypt(row.config.encrypted)) as Record<string, string>;
+      displayName     = cfg.display_name || null;
+      connectionMethod = cfg.connection_method || 'api_key';
+    } catch { /* skip */ }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { config: _config, ...rest } = row;
+    return { ...rest, display_name: displayName, connection_method: connectionMethod };
+  });
+
+  return NextResponse.json({ integrations: sanitized });
 }
 
 export async function POST(req: NextRequest) {
@@ -105,10 +119,12 @@ export async function PATCH(req: NextRequest) {
     result = await testACConnection(config as { api_url: string; api_key: string });
   } else if (integration.type === 'mailchimp') {
     const { testMailchimpConnection } = await import('@/lib/integrations/mailchimp');
-    result = await testMailchimpConnection(config as { api_key: string; list_id: string });
+    // Supports both OAuth (access_token+dc) and API key configs
+    result = await testMailchimpConnection(config as { api_key?: string; list_id?: string; access_token?: string; dc?: string });
   } else if (integration.type === 'stripe') {
     const { testStripeConnection } = await import('@/lib/integrations/stripe-verify');
-    result = await testStripeConnection(config as { secret_key: string; webhook_secret: string });
+    // Supports both OAuth (access_token) and API key (secret_key) configs
+    result = await testStripeConnection(config as { secret_key?: string; access_token?: string; webhook_secret?: string });
   } else if (integration.type === 'meta') {
     // Test Meta by sending a minimal synthetic event to the CAPI endpoint.
     // Tokens generated from Events Manager have read_ads_dataset_quality scope,

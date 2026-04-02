@@ -6,12 +6,32 @@ import axios from 'axios';
 import { hashEmail } from '@/lib/crypto';
 
 interface MailchimpConfig {
-  api_key: string;     // e.g. abc123-us21
-  list_id: string;     // Audience ID
+  // OAuth-connected
+  access_token?: string;
+  dc?: string;            // datacenter prefix, e.g. us21
+  list_id?: string;
+  connection_method?: string;
+  // Manual API key
+  api_key?: string;       // e.g. abc123-us21
+}
+
+function resolveMailchimpAuth(config: MailchimpConfig): { dc: string; authHeader: Record<string, string> } {
+  if (config.access_token && config.dc) {
+    return {
+      dc: config.dc,
+      authHeader: { Authorization: `Bearer ${config.access_token}` },
+    };
+  }
+  // Legacy API key auth
+  const apiKey = config.api_key || '';
+  const dc = apiKey.split('-').pop() || 'us1';
+  return {
+    dc,
+    authHeader: {},   // axios handles Basic auth separately for legacy path
+  };
 }
 
 function getDatacenter(apiKey: string): string {
-  // API key format: key-dc (e.g. abc123-us21)
   return apiKey.split('-').pop() || 'us1';
 }
 
@@ -20,15 +40,23 @@ export async function verifyLeadInMailchimp(
   config: MailchimpConfig
 ): Promise<{ verified: boolean; member?: unknown; error?: string }> {
   try {
-    const dc = getDatacenter(config.api_key);
+    const listId = config.list_id || '';
     const emailHash = await hashEmail(email);
 
-    const res = await axios.get(
-      `https://${dc}.api.mailchimp.com/3.0/lists/${config.list_id}/members/${emailHash}`,
-      {
-        auth: { username: 'anystring', password: config.api_key },
-      }
-    );
+    let res;
+    if (config.access_token && config.dc) {
+      const { dc, authHeader } = resolveMailchimpAuth(config);
+      res = await axios.get(
+        `https://${dc}.api.mailchimp.com/3.0/lists/${listId}/members/${emailHash}`,
+        { headers: authHeader }
+      );
+    } else {
+      const dc = getDatacenter(config.api_key || '');
+      res = await axios.get(
+        `https://${dc}.api.mailchimp.com/3.0/lists/${listId}/members/${emailHash}`,
+        { auth: { username: 'anystring', password: config.api_key || '' } }
+      );
+    }
 
     const status = res.data?.status;
     return {
@@ -76,13 +104,21 @@ export async function testMailchimpConnection(
   config: MailchimpConfig
 ): Promise<{ success: boolean; listName?: string; error?: string }> {
   try {
-    const dc = getDatacenter(config.api_key);
-    const res = await axios.get(
-      `https://${dc}.api.mailchimp.com/3.0/lists/${config.list_id}`,
-      {
-        auth: { username: 'anystring', password: config.api_key },
-      }
-    );
+    const listId = config.list_id || '';
+    let res;
+    if (config.access_token && config.dc) {
+      const { dc, authHeader } = resolveMailchimpAuth(config);
+      res = await axios.get(
+        `https://${dc}.api.mailchimp.com/3.0/lists/${listId}`,
+        { headers: authHeader }
+      );
+    } else {
+      const dc = getDatacenter(config.api_key || '');
+      res = await axios.get(
+        `https://${dc}.api.mailchimp.com/3.0/lists/${listId}`,
+        { auth: { username: 'anystring', password: config.api_key || '' } }
+      );
+    }
     return { success: true, listName: res.data?.name };
   } catch (err: unknown) {
     const error = err as { message?: string };

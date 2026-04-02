@@ -5,8 +5,18 @@
 import Stripe from 'stripe';
 
 interface StripeConfig {
-  secret_key: string;
-  webhook_secret: string;
+  // OAuth-connected: access_token is the connected account's secret key
+  access_token?: string;
+  stripe_user_id?: string;
+  // Manual API key: fallback for legacy / non-OAuth connections
+  secret_key?: string;
+  webhook_secret?: string;
+  connection_method?: string;
+}
+
+function resolveStripeKey(config: StripeConfig): string {
+  // OAuth access_token IS a secret key scoped to the connected account
+  return config.access_token || config.secret_key || '';
 }
 
 export async function verifyPurchaseInStripe(
@@ -14,7 +24,7 @@ export async function verifyPurchaseInStripe(
   config: StripeConfig
 ): Promise<{ verified: boolean; charge?: Stripe.Charge | Stripe.PaymentIntent; error?: string }> {
   try {
-    const stripe = new Stripe(config.secret_key);
+    const stripe = new Stripe(resolveStripeKey(config));
 
     // Try as PaymentIntent first
     try {
@@ -47,7 +57,7 @@ export async function testStripeConnection(
   config: StripeConfig
 ): Promise<{ success: boolean; accountName?: string; error?: string }> {
   try {
-    const stripe = new Stripe(config.secret_key);
+    const stripe = new Stripe(resolveStripeKey(config));
     const account = await stripe.accounts.retrieve();
     return { success: true, accountName: account.business_profile?.name || account.email || undefined };
   } catch (err: unknown) {
