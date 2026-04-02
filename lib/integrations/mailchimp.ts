@@ -78,19 +78,22 @@ export async function addOrUpdateSubscriber(
   tags: string[] = []
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const dc = getDatacenter(config.api_key);
+    const { dc, authHeader } = resolveMailchimpAuth(config);
     const emailHash = await hashEmail(email);
+    const listId = config.list_id || '';
+
+    const axiosConfig = config.access_token
+      ? { headers: authHeader }
+      : { auth: { username: 'anystring', password: config.api_key || '' } };
 
     await axios.put(
-      `https://${dc}.api.mailchimp.com/3.0/lists/${config.list_id}/members/${emailHash}`,
+      `https://${dc}.api.mailchimp.com/3.0/lists/${listId}/members/${emailHash}`,
       {
         email_address: email,
         status_if_new: 'subscribed',
         tags: tags.map(t => ({ name: t, status: 'active' })),
       },
-      {
-        auth: { username: 'anystring', password: config.api_key },
-      }
+      axiosConfig
     );
 
     return { success: true };

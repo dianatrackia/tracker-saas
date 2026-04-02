@@ -20,22 +20,6 @@ interface IntegrationMeta {
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error';
 
-// Manual form fields per type
-const MANUAL_FORMS: Record<string, { key: string; label: string; placeholder: string; hint?: string; type?: string }[]> = {
-  meta: [
-    { key: 'pixel_id', label: 'Pixel ID', placeholder: '1234567890123456' },
-    { key: 'access_token', label: 'Access Token', placeholder: 'EAAxxxxxxxx...', type: 'password',
-      hint: 'Settings → Business Integrations → Generate Token' },
-    { key: 'test_event_code', label: 'Test Event Code (opcional)', placeholder: 'TEST12345' },
-  ],
-  activecampaign: [
-    { key: 'account', label: 'Nombre de tu cuenta', placeholder: 'miempresa',
-      hint: 'Es el subdominio de tu URL de AC: miempresa.activehosted.com' },
-    { key: 'api_key', label: 'API Key', placeholder: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', type: 'password',
-      hint: 'En AC: Configuración → Developer → API Access' },
-  ],
-};
-
 // ── Main Page ───────────────────────────────────────────────────────────────────
 // Separated so useSearchParams is inside a Suspense boundary (required by Next.js 14)
 function IntegrationsContent() {
