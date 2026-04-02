@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
-import { TrendingUp, Folder, Users, Megaphone } from 'lucide-react';
+import { TrendingUp, Folder, Users, Megaphone, AlertTriangle } from 'lucide-react';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Stats = { visits: number; leads: number; purchases: number; revenue: number };
@@ -9,7 +9,10 @@ type AdSetEntry  = Stats & { ads: AdTree };
 type AdSetTree   = Record<string, AdSetEntry>;
 type CampaignEntry = Stats & { adsets: AdSetTree };
 type CampaignTree  = Record<string, CampaignEntry>;
-type ChannelEntry  = Stats & { source: string; medium: string; campaigns: CampaignTree };
+
+// noUtm: traffic with source/medium detected but NO utm_campaign
+type NoUtmStats = { visits: number; leads: number; purchases: number; refs: Set<string> };
+type ChannelEntry  = Stats & { source: string; medium: string; campaigns: CampaignTree; noUtm: NoUtmStats };
 type ChannelTree   = Record<string, ChannelEntry>;
 
 function emptyStats(): Stats {
@@ -111,7 +114,7 @@ export default async function CampaignsPage() {
 
   const { data: events } = await supabase
     .from('events')
-    .select('event_name, properties, value')
+    .select('event_name, properties, value, referrer')
     .eq('workspace_id', workspace.id)
     .gte('created_at', thirtyDaysAgo)
     .in('event_name', ['page_view', 'lead', 'purchase'])
@@ -120,20 +123,41 @@ export default async function CampaignsPage() {
   // ── Build attribution tree ────────────────────────────────────────────────
   const tree: ChannelTree = {};
 
+  const emptyNoUtm = (): NoUtmStats => ({ visits: 0, leads: 0, purchases: 0, refs: new Set<string>() });
+
   events?.forEach(event => {
     const props  = (event.properties as Record<string, unknown>) || {};
     const utms   = (props.utms as Record<string, string>) || {};
     const source = (props.source as string) || 'direct';
     const medium = (props.medium as string) || 'none';
     const chKey  = `${source}::${medium}`;
-    const camp   = utms.utm_campaign || '(sin campaña)';
-    const adset  = utms.utm_term    || '(sin conjunto)';
-    const ad     = utms.utm_content || '(sin anuncio)';
 
     if (!tree[chKey]) {
-      tree[chKey] = { ...emptyStats(), source, medium, campaigns: {} };
+      tree[chKey] = { ...emptyStats(), source, medium, campaigns: {}, noUtm: emptyNoUtm() };
     }
     addToStats(tree[chKey], event.event_name, event.value);
+
+    // ── No UTM campaign: track separately instead of polluting the tree ──────
+    if (!utms.utm_campaign) {
+      const nu = tree[chKey].noUtm;
+      if (event.event_name === 'page_view')  nu.visits++;
+      else if (event.event_name === 'lead')  nu.leads++;
+      else if (event.event_name === 'purchase') nu.purchases++;
+
+      // Collect referrer hosts for context (stored in props.referrer_host by tracker.js)
+      const refHost = (props.referrer_host as string) || null;
+      if (refHost) nu.refs.add(refHost);
+      // Fallback: parse from raw referrer column
+      if (!refHost && event.referrer) {
+        try { nu.refs.add(new URL(event.referrer).hostname.replace(/^www\./, '')); } catch { /* skip */ }
+      }
+      return; // don't add to campaign tree
+    }
+
+    // ── Tagged traffic: build the full hierarchy ─────────────────────────────
+    const camp  = utms.utm_campaign;
+    const adset = utms.utm_term    || '(sin conjunto)';
+    const ad    = utms.utm_content || '(sin anuncio)';
 
     if (!tree[chKey].campaigns[camp]) {
       tree[chKey].campaigns[camp] = { ...emptyStats(), adsets: {} };
@@ -155,7 +179,13 @@ export default async function CampaignsPage() {
   const byVisits = ([, a]: [string, Stats], [, b]: [string, Stats]) => b.visits - a.visits;
 
   const channels = Object.entries(tree).sort(byVisits);
+  // isEmpty only when there are truly 0 events — even no-UTM traffic should show the page
   const isEmpty  = channels.length === 0;
+
+  // Summary: total events with vs without UTMs
+  const totalVisits  = channels.reduce((s, [, ch]) => s + ch.visits, 0);
+  const taggedVisits = channels.reduce((s, [, ch]) => s + (ch.visits - ch.noUtm.visits), 0);
+  const utmCoverage  = totalVisits > 0 ? Math.round((taggedVisits / totalVisits) * 100) : null;
 
   return (
     <div className="p-8">
@@ -167,20 +197,37 @@ export default async function CampaignsPage() {
         </p>
       </div>
 
-      {/* Legend */}
-      {!isEmpty && (
-        <div className="flex items-center gap-6 mb-5 text-xs text-slate-400">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" />
-            Lead rate ≥ 5% / Compra rate ≥ 30%
+      {/* UTM coverage banner */}
+      {!isEmpty && utmCoverage !== null && (
+        <div className={`flex items-center justify-between mb-5 px-4 py-3 rounded-lg text-sm ${
+          utmCoverage >= 80 ? 'bg-green-50 border border-green-200' :
+          utmCoverage >= 50 ? 'bg-yellow-50 border border-yellow-200' :
+          'bg-red-50 border border-red-200'
+        }`}>
+          <div className="flex items-center gap-2">
+            {utmCoverage < 80 && <AlertTriangle className={`w-4 h-4 ${utmCoverage >= 50 ? 'text-yellow-500' : 'text-red-500'}`} />}
+            <span className={`font-medium ${utmCoverage >= 80 ? 'text-green-700' : utmCoverage >= 50 ? 'text-yellow-700' : 'text-red-700'}`}>
+              {utmCoverage}% del tráfico tiene UTMs
+            </span>
+            {utmCoverage < 100 && (
+              <span className="text-slate-500">
+                — {totalVisits - taggedVisits} visitas sin tracking de campaña
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" />
-            Lead ≥ 2% / Compra ≥ 10%
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" />
-            Por debajo del umbral
+          <div className="flex items-center gap-6 text-xs text-slate-400">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+              Lead ≥5% / Compra ≥30%
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" />
+              Lead ≥2% / Compra ≥10%
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-red-400 inline-block" />
+              Bajo umbral
+            </div>
           </div>
         </div>
       )}
@@ -212,6 +259,36 @@ export default async function CampaignsPage() {
               </span>
               <StatsRow stats={ch} light />
             </div>
+
+            {/* ── No-UTM traffic row ─────────────────────────────────── */}
+            {ch.noUtm.visits > 0 && (
+              <div className={`flex items-center justify-between px-5 py-3 bg-amber-50 border-b border-amber-100 ${sortedCampaigns.length === 0 ? 'rounded-b-xl' : ''}`}>
+                <div className="flex items-center gap-2 pl-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span className="text-xs font-semibold text-amber-700">Sin UTMs</span>
+                  <span className="text-xs text-amber-600">
+                    {ch.noUtm.visits} visita{ch.noUtm.visits !== 1 ? 's' : ''} sin tracking de campaña
+                  </span>
+                  {ch.noUtm.refs.size > 0 && (
+                    <span className="text-xs text-slate-400">
+                      · desde: {[...ch.noUtm.refs].slice(0, 3).join(', ')}
+                      {ch.noUtm.refs.size > 3 ? ` +${ch.noUtm.refs.size - 3} más` : ''}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-4 text-xs tabular-nums shrink-0">
+                  {ch.noUtm.leads > 0 && (
+                    <span className="text-amber-700 font-medium">{ch.noUtm.leads} lead{ch.noUtm.leads !== 1 ? 's' : ''}</span>
+                  )}
+                  {ch.noUtm.purchases > 0 && (
+                    <span className="text-amber-700 font-medium">{ch.noUtm.purchases} compra{ch.noUtm.purchases !== 1 ? 's' : ''}</span>
+                  )}
+                  <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-medium">
+                    Agregar UTMs al link del anuncio
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* ── Campaigns ───────────────────────────────────────────── */}
             {sortedCampaigns.map(([campName, camp], campIdx) => {

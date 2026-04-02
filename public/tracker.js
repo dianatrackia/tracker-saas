@@ -173,25 +173,43 @@
       setCookie('_fbp', fbp, 90);
     }
 
-    var srcData = {};
+    // Always re-detect source from current page signals (fbclid, gclid, referrer, etc.)
+    // This is crucial: if cached source is "direct" but user now arrives via a FB ad
+    // (fbclid present), the ad click MUST override the stale cache.
+    var currentSrc = detectTrafficSource(params, document.referrer);
+    var srcData = currentSrc;
     try {
-      var savedSrc = localStorage.getItem('__trk_src');
-      if (savedSrc) {
-        srcData = JSON.parse(savedSrc);
+      if (currentSrc.source !== 'direct' && currentSrc.source !== 'unknown') {
+        // Current page has a real signal — use it and update cache
+        localStorage.setItem('__trk_src', JSON.stringify(currentSrc));
       } else {
-        srcData = detectTrafficSource(params, document.referrer);
-        localStorage.setItem('__trk_src', JSON.stringify(srcData));
+        // No signal on this page → preserve first-touch from cache if available
+        var savedSrc = localStorage.getItem('__trk_src');
+        if (savedSrc) {
+          srcData = JSON.parse(savedSrc);
+        } else {
+          localStorage.setItem('__trk_src', JSON.stringify(currentSrc));
+        }
       }
     } catch (e) {
-      srcData = detectTrafficSource(params, document.referrer);
+      srcData = currentSrc;
     }
 
+    // Capture referrer host for no-UTM traffic attribution display
+    var refHost;
+    try {
+      if (document.referrer) {
+        refHost = new URL(document.referrer).hostname.replace(/^www\./, '');
+      }
+    } catch (e) {}
+
     return {
-      utms:   Object.keys(stored).length ? stored : undefined,
-      fbc:    getCookie('_fbc') || undefined,
-      fbp:    fbp || undefined,
-      source: srcData.source || undefined,
-      medium: srcData.medium || undefined,
+      utms:        Object.keys(stored).length ? stored : undefined,
+      fbc:         getCookie('_fbc') || undefined,
+      fbp:         fbp || undefined,
+      source:      srcData.source || undefined,
+      medium:      srcData.medium || undefined,
+      referrer_host: refHost || undefined,
     };
   }
 
@@ -205,11 +223,12 @@
   // ── Core HTTP sender (bypasses consent check — called only when allowed) ─
   function sendImmediate(eventName, extra) {
     var baseProps = {};
-    if (clickData.fbc)    baseProps.fbc    = clickData.fbc;
-    if (clickData.fbp)    baseProps.fbp    = clickData.fbp;
-    if (clickData.utms)   baseProps.utms   = clickData.utms;
-    if (clickData.source) baseProps.source = clickData.source;
-    if (clickData.medium) baseProps.medium = clickData.medium;
+    if (clickData.fbc)           baseProps.fbc           = clickData.fbc;
+    if (clickData.fbp)           baseProps.fbp           = clickData.fbp;
+    if (clickData.utms)          baseProps.utms          = clickData.utms;
+    if (clickData.source)        baseProps.source        = clickData.source;
+    if (clickData.medium)        baseProps.medium        = clickData.medium;
+    if (clickData.referrer_host) baseProps.referrer_host = clickData.referrer_host;
 
     var extraWithProps = Object.assign({}, extra || {});
     if (Object.keys(baseProps).length) {
