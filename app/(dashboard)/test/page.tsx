@@ -28,6 +28,7 @@ export default function TestPage() {
   const [content,  setContent]  = useState('anuncio-imagen-1');
   const [email,    setEmail]    = useState('');
   const [value,    setValue]    = useState('97');
+  const [orderId,  setOrderId]  = useState('');
   const [loading,  setLoading]  = useState(false);
   const [result,   setResult]   = useState<{ ok: boolean; msg: string } | null>(null);
   const [tid,      setTid]      = useState<string | null>(null);
@@ -66,6 +67,7 @@ export default function TestPage() {
       url:   'https://mi-sitio-de-prueba.com/producto',
       email: eventName !== 'page_view' && email ? email : undefined,
       value: eventName === 'purchase' ? parseFloat(value) || undefined : undefined,
+      order_id: eventName === 'purchase' && orderId ? orderId : (eventName === 'purchase' ? `sim-${Date.now()}` : undefined),
       props: {
         source,
         medium,
@@ -156,6 +158,8 @@ export default function TestPage() {
 
         <label className={lbl}>Valor de la compra (USD)</label>
         <input className={inp} type="number" value={value} onChange={e => setValue(e.target.value)} placeholder="97" />
+        <label className={lbl}>Order ID (opcional — auto-generado si vacío)</label>
+        <input className={inp} value={orderId} onChange={e => setOrderId(e.target.value)} placeholder="pi_3abc... o sim-12345" />
         <button
           onClick={() => sendEvent('purchase')}
           disabled={loading}
