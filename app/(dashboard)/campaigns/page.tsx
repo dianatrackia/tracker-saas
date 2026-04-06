@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
-import { TrendingUp, Folder, Users, Megaphone, AlertTriangle } from 'lucide-react';
+import { TrendingUp, Folder, Users, Megaphone, AlertTriangle, Sparkles } from 'lucide-react';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Stats = { visits: number; leads: number; purchases: number; revenue: number };
@@ -12,7 +12,8 @@ type CampaignTree  = Record<string, CampaignEntry>;
 
 // noUtm: traffic with source/medium detected but NO utm_campaign
 type NoUtmStats = { visits: number; leads: number; purchases: number; refs: Set<string> };
-type ChannelEntry  = Stats & { source: string; medium: string; campaigns: CampaignTree; noUtm: NoUtmStats };
+// attributed: events recovered via server-side attribution (no utm on arrival)
+type ChannelEntry  = Stats & { source: string; medium: string; campaigns: CampaignTree; noUtm: NoUtmStats; attributed: number };
 type ChannelTree   = Record<string, ChannelEntry>;
 
 function emptyStats(): Stats {
@@ -133,9 +134,15 @@ export default async function CampaignsPage() {
     const chKey  = `${source}::${medium}`;
 
     if (!tree[chKey]) {
-      tree[chKey] = { ...emptyStats(), source, medium, campaigns: {}, noUtm: emptyNoUtm() };
+      tree[chKey] = { ...emptyStats(), source, medium, campaigns: {}, noUtm: emptyNoUtm(), attributed: 0 };
     }
     addToStats(tree[chKey], event.event_name, event.value);
+
+    // Track server-side attributed events
+    const attrMethod = props.attribution_method as string | undefined;
+    if (attrMethod === 'carried_forward' || attrMethod === 'fingerprint_carried_forward') {
+      tree[chKey].attributed++;
+    }
 
     // ── No UTM campaign: track separately instead of polluting the tree ──────
     if (!utms.utm_campaign) {
@@ -254,9 +261,17 @@ export default async function CampaignsPage() {
 
             {/* ── Channel header (dark) ───────────────────────────────── */}
             <div className="flex items-center justify-between px-5 py-3.5 bg-slate-900">
-              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${srcBadge}`}>
-                {label}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${srcBadge}`}>
+                  {label}
+                </span>
+                {ch.attributed > 0 && (
+                  <span className="flex items-center gap-1 text-[10px] font-medium text-indigo-300 bg-indigo-900/60 px-2 py-0.5 rounded-full">
+                    <Sparkles className="w-2.5 h-2.5" />
+                    {ch.attributed} atribuida{ch.attributed !== 1 ? 's' : ''} inteligentemente
+                  </span>
+                )}
+              </div>
               <StatsRow stats={ch} light />
             </div>
 

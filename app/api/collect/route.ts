@@ -140,6 +140,84 @@ export async function POST(req: NextRequest) {
       { onConflict: 'workspace_id,visitor_id', ignoreDuplicates: false }
     );
 
+    // ── Server-side attribution enrichment ──────────────────────────────────
+    // If this event arrives without utm_campaign, look up the visitor's last
+    // known UTM touch within the 30-day attribution window.
+    // Covers: Safari ITP clearing localStorage, incognito mode, direct return visits.
+    // Strategy 1 — same visitor_id (same cookie = same browser)
+    // Strategy 2 — same fingerprint (same device, different cookie e.g. incognito)
+    const rawUtms = (data.props?.utms || {}) as Record<string, string>;
+    const hasUtmCampaign = !!rawUtms.utm_campaign;
+    let enrichedProps: Record<string, unknown> = { ...(data.props || {}) };
+
+    if (!hasUtmCampaign) {
+      const windowStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      // Strategy 1: same visitor_id
+      const { data: prevEvents } = await supabase
+        .from('events')
+        .select('properties')
+        .eq('workspace_id', workspace.id)
+        .eq('visitor_id', data.vid)
+        .gte('created_at', windowStart)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      const prevWithUtm = prevEvents?.find(e => {
+        const u = (e.properties as Record<string, unknown>)?.utms as Record<string, string>;
+        return u?.utm_campaign;
+      });
+
+      if (prevWithUtm) {
+        const p = prevWithUtm.properties as Record<string, unknown>;
+        enrichedProps = {
+          ...enrichedProps,
+          source: p.source || enrichedProps.source,
+          medium: p.medium || enrichedProps.medium,
+          utms: p.utms,
+          attribution_method: 'carried_forward',
+        };
+      } else if (data.fp) {
+        // Strategy 2: same fingerprint, different visitor_id (incognito / cleared cookies)
+        const { data: fpVisitors } = await supabase
+          .from('visitors')
+          .select('visitor_id')
+          .eq('workspace_id', workspace.id)
+          .eq('fingerprint', data.fp)
+          .neq('visitor_id', data.vid)
+          .limit(5);
+
+        if (fpVisitors?.length) {
+          const vids = fpVisitors.map((v: { visitor_id: string }) => v.visitor_id);
+          const { data: fpPrevEvents } = await supabase
+            .from('events')
+            .select('properties')
+            .eq('workspace_id', workspace.id)
+            .in('visitor_id', vids)
+            .gte('created_at', windowStart)
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+          const fpWithUtm = fpPrevEvents?.find(e => {
+            const u = (e.properties as Record<string, unknown>)?.utms as Record<string, string>;
+            return u?.utm_campaign;
+          });
+
+          if (fpWithUtm) {
+            const p = fpWithUtm.properties as Record<string, unknown>;
+            enrichedProps = {
+              ...enrichedProps,
+              source: p.source || enrichedProps.source,
+              medium: p.medium || enrichedProps.medium,
+              utms: p.utms,
+              attribution_method: 'fingerprint_carried_forward',
+            };
+          }
+        }
+      }
+    }
+    // ── End attribution enrichment ───────────────────────────────────────────
+
     // Store the event
     const { data: event, error: eventError } = await supabase
       .from('events')
@@ -152,7 +230,7 @@ export async function POST(req: NextRequest) {
         referrer: data.ref || null,
         ip,
         user_agent: userAgent,
-        properties: data.props || {},
+        properties: enrichedProps,
         email: data.email || null,
         value: data.value || null,
         currency: data.currency || 'USD',
