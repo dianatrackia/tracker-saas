@@ -341,12 +341,16 @@ async function processIntegrations(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any
 ) {
+  console.log('[integrations] start — workspace:', workspaceId, '| event:', event.id, '| type:', event.event_name);
+
   // Load active integrations for this workspace
-  const { data: integrations } = await supabase
+  const { data: integrations, error: intErr } = await supabase
     .from('integrations')
     .select('*')
     .eq('workspace_id', workspaceId)
     .eq('enabled', true);
+
+  console.log('[integrations] found:', integrations?.length ?? 0, intErr ? `| error: ${intErr.message}` : '');
 
   if (!integrations?.length) return;
 
@@ -363,9 +367,12 @@ async function processIntegrations(
     let verified = false;
     let verifiedBy: string | null = null;
 
+    console.log(`[integrations] processing type=${integration.type} for event=${event.event_name}`);
+
     // ── Meta CAPI ──────────────────────────────────────────────────────
     if (integration.type === 'meta') {
       result = await sendToMeta(event, config as { pixel_id: string; access_token: string });
+      console.log(`[integrations] meta result: success=${result.success}`, result.error ?? '');
     }
 
     // ── ActiveCampaign (verify lead) ───────────────────────────────────
@@ -374,6 +381,7 @@ async function processIntegrations(
       verified = res.verified;
       verifiedBy = 'activecampaign';
       result = { success: !res.error, error: res.error };
+      console.log(`[integrations] AC result: verified=${res.verified}`, res.error ?? '');
     }
 
     // ── Mailchimp (verify lead) ────────────────────────────────────────
@@ -382,6 +390,7 @@ async function processIntegrations(
       verified = res.verified;
       verifiedBy = 'mailchimp';
       result = { success: !res.error, error: res.error };
+      console.log(`[integrations] Mailchimp result: verified=${res.verified}`, res.error ?? '');
     }
 
     // ── Stripe (verify purchase) ───────────────────────────────────────
@@ -393,6 +402,7 @@ async function processIntegrations(
       verified = res.verified;
       verifiedBy = 'stripe';
       result = { success: !res.error, error: res.error };
+      console.log(`[integrations] Stripe result: verified=${res.verified}`, res.error ?? '');
     }
 
     // Log the forward attempt
