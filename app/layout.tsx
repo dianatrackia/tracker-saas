@@ -5,8 +5,8 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'TrackerSaaS — First-Party Tracking',
-  description: 'Track your conversions server-side. Bypass adblockers. Own your data.',
+  title: 'DIANA Tracking — First-Party Tracking',
+  description: 'Trackea tus conversiones server-side. Bypasea adblockers. Dueno de tus datos.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
