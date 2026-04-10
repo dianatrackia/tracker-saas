@@ -6,6 +6,8 @@
   :root {
     --background: 248 250 252;
     --foreground: 15 23 42;
+    --brand-red: #E53535;
+    --navy-900: #0D1B2A;
   }
   body {
     @apply bg-slate-50 text-slate-900 antialiased;
