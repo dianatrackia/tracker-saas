@@ -142,7 +142,7 @@ export async function PATCH(req: NextRequest) {
                                       event_time: Math.floor(Date.now() / 1000),
                                       event_id: `test_conn_${Date.now()}`,
                                       action_source: 'website',
-                                      user_data: { client_ip_address: '127.0.0.1', client_user_agent: 'TrackerSaaS/test' },
+                                      user_data: { client_ip_address: '127.0.0.1', client_user_agent: 'DIANATracking/test' },
                           }],
                           access_token: config.access_token,
                 };
