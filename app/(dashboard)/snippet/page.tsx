@@ -24,7 +24,7 @@ export default async function SnippetPage() {
     ? `https://${workspace.custom_domain}`
     : appUrl;
 
-  const snippet = `<!-- TrackerSaaS - First Party Tracking -->
+  const snippet = `<!-- DIANA Tracking - First Party Tracking -->
 <script src="${scriptBase}/tracker.js" data-tid="${workspace.tracking_id}" async></script>`;
 
   const purchaseSnippet = `<!-- Llamar en tu página de confirmación de compra -->
