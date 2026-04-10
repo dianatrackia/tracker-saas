@@ -4,7 +4,17 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import { Activity } from 'lucide-react';
+
+function DianaLogo({ size = 44 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="40" height="40" rx="9" fill="#0D1B2A" />
+      <path d="M7 5h11c9.389 0 15 5.611 15 15s-5.611 15-15 15H7V5z" fill="white" />
+      <path d="M13 11h5c5.523 0 9 3.477 9 9s-3.477 9-9 9h-5V11z" fill="#0D1B2A" />
+      <circle cx="22" cy="20" r="5.5" fill="#E53535" />
+    </svg>
+  );
+}
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -36,24 +46,16 @@ export default function RegisterPage() {
       return;
     }
 
-    // Update workspace name
     const { data: { user } } = await supabase.auth.getUser();
     if (user && siteName) {
-      await supabase
-        .from('workspaces')
-        .update({ name: siteName })
-        .eq('user_id', user.id);
+      await supabase.from('workspaces').update({ name: siteName }).eq('user_id', user.id);
     }
 
-    // Wait a moment for the DB trigger to create the workspace, then update its name
     if (siteName) {
       await new Promise(r => setTimeout(r, 1500));
       const { data: { user: newUser } } = await supabase.auth.getUser();
       if (newUser) {
-        await supabase
-          .from('workspaces')
-          .update({ name: siteName })
-          .eq('user_id', newUser.id);
+        await supabase.from('workspaces').update({ name: siteName }).eq('user_id', newUser.id);
       }
     }
 
@@ -63,15 +65,14 @@ export default function RegisterPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-50 to-slate-100 px-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 px-4">
         <div className="card p-8 max-w-md w-full text-center">
           <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-2xl">✓</span>
+            <span className="text-2xl">check</span>
           </div>
-          <h2 className="text-xl font-bold mb-2">¡Revisa tu email!</h2>
+          <h2 className="text-xl font-bold mb-2">Revisa tu email!</h2>
           <p className="text-slate-500 text-sm">
-            Te enviamos un enlace de confirmación a <strong>{email}</strong>.
-            Haz clic en el enlace para activar tu cuenta.
+            Te enviamos un enlace de confirmacion a <strong>{email}</strong>.
           </p>
         </div>
       </div>
@@ -79,13 +80,14 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-50 to-slate-100 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 px-4">
       <div className="w-full max-w-md">
-        <div className="flex items-center justify-center gap-2 mb-8">
-          <div className="p-2 bg-brand-500 rounded-xl">
-            <Activity className="w-6 h-6 text-white" />
+        <div className="flex items-center justify-center gap-3 mb-8">
+          <DianaLogo size={44} />
+          <div className="leading-none">
+            <span className="text-2xl font-extrabold text-slate-900 tracking-wide block">DIANA</span>
+            <span className="text-xs font-bold tracking-widest uppercase" style={{ color: '#E53535' }}>Tracking</span>
           </div>
-          <span className="text-xl font-bold text-slate-900">TrackerSaaS</span>
         </div>
 
         <div className="card p-8">
@@ -95,47 +97,19 @@ export default function RegisterPage() {
           <form onSubmit={handleRegister} className="space-y-4">
             <div>
               <label className="label">Nombre de tu sitio</label>
-              <input
-                type="text"
-                required
-                value={siteName}
-                onChange={e => setSiteName(e.target.value)}
-                className="input"
-                placeholder="Mi tienda online"
-              />
+              <input type="text" required value={siteName} onChange={e => setSiteName(e.target.value)} className="input" placeholder="Mi tienda online" />
             </div>
-
             <div>
               <label className="label">Email</label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="input"
-                placeholder="tu@email.com"
-                autoComplete="email"
-              />
+              <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="input" placeholder="tu@email.com" autoComplete="email" />
             </div>
-
             <div>
-              <label className="label">Contraseña</label>
-              <input
-                type="password"
-                required
-                minLength={8}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="input"
-                placeholder="Mínimo 8 caracteres"
-                autoComplete="new-password"
-              />
+              <label className="label">Contrasena</label>
+              <input type="password" required minLength={8} value={password} onChange={e => setPassword(e.target.value)} className="input" placeholder="Minimo 8 caracteres" autoComplete="new-password" />
             </div>
 
             {error && (
-              <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                {error}
-              </p>
+              <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
             )}
 
             <button type="submit" className="btn-primary w-full justify-center py-2.5" disabled={loading}>
@@ -144,9 +118,9 @@ export default function RegisterPage() {
           </form>
 
           <p className="text-center text-sm text-slate-500 mt-6">
-            ¿Ya tienes cuenta?{' '}
+            Ya tienes cuenta?{' '}
             <Link href="/login" className="text-brand-600 hover:underline font-medium">
-              Iniciar sesión
+              Iniciar sesion
             </Link>
           </p>
         </div>
