@@ -89,7 +89,7 @@ export function CustomDomainSetup({ initialDomain, initialVerified, trackingId, 
 
   const effectiveDomain = savedDomain || appUrl.replace(/^https?:\/\//, '');
   const snippetSrc = savedDomain ? `https://${savedDomain}` : appUrl;
-  const customSnippet = `<!-- TrackerSaaS - First Party Tracking -->
+  const customSnippet = `<!-- DIANA Tracking - First Party Tracking -->
 <script src="${snippetSrc}/tracker.js" data-tid="${trackingId}" async></script>`;
 
   // ── Status badge ─────────────────────────────────────────────────────────
