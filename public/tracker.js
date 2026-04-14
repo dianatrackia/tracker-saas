@@ -1,5 +1,5 @@
 /**
- * TrackerSaaS - First Party Tracking Script
+ * DIANA Tracking - First Party Tracking Script
  * Version: 1.1.0
  *
  * Usage: <script src="https://your-app.vercel.app/tracker.js" data-tid="trk_YOUR_ID" async></script>
