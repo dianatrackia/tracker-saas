@@ -121,7 +121,7 @@ export function CustomDomainSetup({ initialDomain, initialVerified, trackingId, 
           <div>
             <h2 className="font-semibold text-slate-900">Dominio Propio (First-Party real)</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Como AnyTrack — el script corre desde <strong>tu dominio</strong>, invisible para adblockers.
+              El script corre desde <strong>tu dominio</strong>, invisible para adblockers.
             </p>
           </div>
         </div>
