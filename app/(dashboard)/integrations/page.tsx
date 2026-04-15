@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
   CheckCircle, XCircle, Loader2, Save, TestTube,
-  ExternalLink, Plug, Unplug, ChevronDown,
+  ExternalLink, Plug, Unplug, ChevronDown, Info,
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -20,8 +20,6 @@ interface IntegrationMeta {
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error';
 
-// ── Main Page ───────────────────────────────────────────────────────────────────
-// Separated so useSearchParams is inside a Suspense boundary (required by Next.js 14)
 function IntegrationsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -31,28 +29,26 @@ function IntegrationsContent() {
   const [integrations, setIntegrations] = useState<Record<string, IntegrationMeta>>({});
   const [loading, setLoading] = useState(true);
 
-  // Notification from OAuth callback
   const connectedParam = searchParams.get('connected');
   const connectedName  = searchParams.get('name');
   const errorParam     = searchParams.get('error');
 
-  // Manual form state (for Meta and AC only)
   const [manualForm, setManualForm] = useState<Record<string, Record<string, string>>>({
     meta:             { pixel_id: '', access_token: '', test_event_code: '' },
     activecampaign:   { account: '', api_key: '' },
     mailchimp:        { api_key: '', list_id: '' },
     stripe:           { secret_key: '', webhook_secret: '' },
+    google_ads:       { customer_id: '', developer_token: '', conversion_action: '' },
+    gohighlevel:      { api_key: '', location_id: '' },
   });
-  const [saving, setSaving]       = useState<Record<string, boolean>>({});
+  const [saving, setSaving]         = useState<Record<string, boolean>>({});
   const [testStatus, setTestStatus] = useState<Record<string, TestStatus>>({});
   const [testMsg, setTestMsg]       = useState<Record<string, string>>({});
 
-  // Mailchimp audience picker
   const [mcLists, setMcLists]         = useState<{ id: string; name: string; stats: { member_count: number } }[]>([]);
   const [mcListsOpen, setMcListsOpen] = useState(false);
   const [mcSaving, setMcSaving]       = useState(false);
 
-  // Load workspace + integrations
   const loadIntegrations = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -69,7 +65,6 @@ function IntegrationsContent() {
 
   useEffect(() => { loadIntegrations(); }, [loadIntegrations]);
 
-  // Clear URL params after showing notification
   useEffect(() => {
     if (connectedParam || errorParam) {
       const t = setTimeout(() => router.replace('/integrations'), 5000);
@@ -77,7 +72,6 @@ function IntegrationsContent() {
     }
   }, [connectedParam, errorParam, router]);
 
-  // ── Actions ────────────────────────────────────────────────────────────────
   function updateField(type: string, field: string, value: string) {
     setManualForm(prev => ({ ...prev, [type]: { ...prev[type], [field]: value } }));
   }
@@ -87,13 +81,27 @@ function IntegrationsContent() {
     setSaving(prev => ({ ...prev, [type]: true }));
     let config = { ...manualForm[type] };
 
-    // ActiveCampaign: construct api_url from account subdomain
     if (type === 'activecampaign' && config.account) {
       config = {
         api_url: `https://${config.account}.api-us1.com`,
         api_key: config.api_key,
         connection_method: 'api_key',
         display_name: `${config.account}.activehosted.com`,
+      };
+    } else if (type === 'google_ads') {
+      config = {
+        customer_id: config.customer_id.replace(/-/g, ''),
+        developer_token: config.developer_token,
+        conversion_action: config.conversion_action,
+        connection_method: 'api_key',
+        display_name: `Google Ads · ${config.customer_id}`,
+      };
+    } else if (type === 'gohighlevel') {
+      config = {
+        api_key: config.api_key,
+        location_id: config.location_id,
+        connection_method: 'api_key',
+        display_name: `GoHighLevel · ${config.location_id}`,
       };
     } else {
       config = { ...config, connection_method: 'api_key' };
@@ -130,7 +138,6 @@ function IntegrationsContent() {
   async function disconnect(type: string) {
     const id = integrations[type]?.id;
     if (!id) return;
-    // Disable the integration
     await fetch('/api/integrations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -163,8 +170,7 @@ function IntegrationsContent() {
     setMcSaving(false);
   }
 
-  // ── Sub-components ─────────────────────────────────────────────────────────
-
+  // ── Sub-components ────────────────────────────────────────────────────
   const StatusBadge = ({ type }: { type: string }) => {
     const integ = integrations[type];
     if (!integ || !integ.enabled) return null;
@@ -226,16 +232,13 @@ function IntegrationsContent() {
     );
   }
 
-  const stripeOAuthAvailable    = true; // will gracefully redirect if STRIPE_CLIENT_ID not set
-  const mailchimpOAuthAvailable = true; // same
-
   return (
     <div className="p-8 max-w-4xl">
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900">Integraciones</h1>
         <p className="text-slate-500 text-sm mt-1">
-          Conecta tus plataformas para verificar conversiones y enviar eventos server-side.
+          Conectá tus plataformas para que DIANA devuelva conversiones reales verificadas por tu CRM.
         </p>
       </div>
 
@@ -259,6 +262,393 @@ function IntegrationsContent() {
         </div>
       )}
 
+      {/* ── Sección: Plataformas de Ads ─────────────────────────────────── */}
+      <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Plataformas de publicidad</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+
+        {/* ── META CAPI ─────────────────────────────────────────────────── */}
+        <div className="card p-6">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🎯</span>
+              <div>
+                <h3 className="font-semibold text-slate-900">Meta (Facebook) CAPI</h3>
+                <p className="text-xs text-slate-500">Conversiones server-side · bypasea adblockers</p>
+              </div>
+            </div>
+            <StatusBadge type="meta" />
+          </div>
+
+          {integrations.meta?.enabled ? (
+            <div>
+              {integrations.meta.display_name && (
+                <p className="text-sm text-slate-600 mb-3">
+                  <span className="font-medium">Pixel:</span> {integrations.meta.display_name}
+                </p>
+              )}
+
+              {/* Lead Ads info */}
+              <details className="mb-3 border border-amber-200 rounded-lg bg-amber-50">
+                <summary className="flex items-center gap-2 px-3 py-2.5 cursor-pointer select-none text-sm font-medium text-amber-800">
+                  <Info className="w-4 h-4 shrink-0" />
+                  ¿Tenés campañas de formulario directo (Lead Ads)?
+                </summary>
+                <div className="px-3 pb-3 text-xs text-amber-900 space-y-2 border-t border-amber-200 pt-2">
+                  <p>
+                    Los <strong>Lead Ads de Meta</strong> (formularios que se abren dentro de Facebook/Instagram) <strong>no pasan por tu sitio web</strong>, por lo que el snippet no los captura automáticamente.
+                  </p>
+                  <p>Para capturarlos, configurá un webhook de leads de Meta que apunte a:</p>
+                  <code className="block bg-white border border-amber-200 px-2 py-1.5 rounded text-xs font-mono break-all">
+                    {typeof window !== 'undefined' ? window.location.origin : ''}/api/webhooks/meta-leads
+                  </code>
+                  <p className="text-amber-700">
+                    Hacé esto en Meta Business Suite → Todas las herramientas → Leads Center → Webhooks. Una vez configurado, DIANA recibirá los leads y los enviará de vuelta a CAPI para cerrar el ciclo de atribución.
+                  </p>
+                </div>
+              </details>
+
+              <TestRow type="meta" />
+              <ActionButtons type="meta" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex gap-2 items-start bg-slate-50 rounded-lg p-3 text-xs text-slate-600">
+                <Info className="w-4 h-4 shrink-0 text-slate-400 mt-0.5" />
+                <p>DIANA envía los eventos de conversión directamente a Meta desde el servidor, sin depender del pixel del navegador. Esto mejora la atribución y bypasea adblockers.</p>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">1</span>
+                <div className="flex-1">
+                  <label className="label">Pixel ID</label>
+                  <input
+                    type="text"
+                    value={manualForm.meta?.pixel_id || ''}
+                    onChange={e => updateField('meta', 'pixel_id', e.target.value)}
+                    className="input font-mono text-xs"
+                    placeholder="1234567890123456"
+                  />
+                  <a href="https://business.facebook.com/events_manager" target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-1">
+                    <ExternalLink className="w-3 h-3" /> Encontralo en Events Manager → Orígenes de datos
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">2</span>
+                <div className="flex-1">
+                  <label className="label">Access Token (CAPI)</label>
+                  <input
+                    type="password"
+                    value={manualForm.meta?.access_token || ''}
+                    onChange={e => updateField('meta', 'access_token', e.target.value)}
+                    className="input font-mono text-xs"
+                    placeholder="EAAxxxxxxxx..."
+                  />
+                  <a href="https://business.facebook.com/events_manager" target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-1">
+                    <ExternalLink className="w-3 h-3" /> Events Manager → Tu Pixel → Configuración → Generar token de acceso
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-500 text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">3</span>
+                <div className="flex-1">
+                  <label className="label">Código de evento de prueba <span className="text-slate-400 font-normal">(opcional)</span></label>
+                  <input
+                    type="text"
+                    value={manualForm.meta?.test_event_code || ''}
+                    onChange={e => updateField('meta', 'test_event_code', e.target.value)}
+                    className="input font-mono text-xs"
+                    placeholder="TEST12345"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">Solo para pruebas. Quitarlo antes de activar en producción.</p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => saveManual('meta')}
+                disabled={saving.meta || !manualForm.meta?.pixel_id || !manualForm.meta?.access_token}
+                className="btn-primary w-full"
+              >
+                {saving.meta ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />}
+                Conectar Meta CAPI
+              </button>
+              <TestRow type="meta" />
+            </div>
+          )}
+        </div>
+
+        {/* ── GOOGLE ADS ────────────────────────────────────────────────── */}
+        <div className="card p-6">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🔵</span>
+              <div>
+                <h3 className="font-semibold text-slate-900">Google Ads</h3>
+                <p className="text-xs text-slate-500">Conversiones offline · devuelve leads reales verificados</p>
+              </div>
+            </div>
+            <StatusBadge type="google_ads" />
+          </div>
+
+          {integrations.google_ads?.enabled ? (
+            <div>
+              {integrations.google_ads.display_name && (
+                <p className="text-sm text-slate-600 mb-3">
+                  <span className="font-medium">Cuenta:</span> {integrations.google_ads.display_name}
+                </p>
+              )}
+              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-700 mb-3">
+                <p>DIANA captura el <code className="bg-blue-100 px-1 rounded">gclid</code> de los visitantes que llegan desde Google Ads y envía de vuelta las conversiones verificadas como <strong>conversiones offline</strong>.</p>
+              </div>
+              <TestRow type="google_ads" />
+              <ActionButtons type="google_ads" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex gap-2 items-start bg-slate-50 rounded-lg p-3 text-xs text-slate-600">
+                <Info className="w-4 h-4 shrink-0 text-slate-400 mt-0.5" />
+                <p>Cuando alguien hace clic en tu anuncio, DIANA captura el ID del clic (gclid). Cuando ese lead se convierte en cliente real (verificado por tu CRM), DIANA se lo informa a Google Ads para mejorar la optimización de tus campañas.</p>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">1</span>
+                <div className="flex-1">
+                  <label className="label">ID de cliente de Google Ads</label>
+                  <input
+                    type="text"
+                    value={manualForm.google_ads?.customer_id || ''}
+                    onChange={e => updateField('google_ads', 'customer_id', e.target.value)}
+                    className="input font-mono text-xs"
+                    placeholder="123-456-7890"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">Está en la esquina superior derecha de tu cuenta de Google Ads.</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">2</span>
+                <div className="flex-1">
+                  <label className="label">Developer Token</label>
+                  <input
+                    type="password"
+                    value={manualForm.google_ads?.developer_token || ''}
+                    onChange={e => updateField('google_ads', 'developer_token', e.target.value)}
+                    className="input font-mono text-xs"
+                    placeholder="ABcDeFgHiJkLmN..."
+                  />
+                  <a href="https://developers.google.com/google-ads/api/docs/get-started/dev-token" target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-1">
+                    <ExternalLink className="w-3 h-3" /> Cómo obtener un Developer Token
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">3</span>
+                <div className="flex-1">
+                  <label className="label">Nombre de la acción de conversión</label>
+                  <input
+                    type="text"
+                    value={manualForm.google_ads?.conversion_action || ''}
+                    onChange={e => updateField('google_ads', 'conversion_action', e.target.value)}
+                    className="input text-xs"
+                    placeholder="Lead verificado"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    El nombre exacto de la conversión en Google Ads. Creala en Herramientas → Conversiones → Nueva acción de conversión → Importar.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => saveManual('google_ads')}
+                disabled={saving.google_ads || !manualForm.google_ads?.customer_id || !manualForm.google_ads?.developer_token || !manualForm.google_ads?.conversion_action}
+                className="btn-primary w-full"
+              >
+                {saving.google_ads ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />}
+                Conectar Google Ads
+              </button>
+              <TestRow type="google_ads" />
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* ── Sección: CRMs ───────────────────────────────────────────────── */}
+      <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">CRM y automatizaciones</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+
+        {/* ── GOHIGHLEVEL ───────────────────────────────────────────────── */}
+        <div className="card p-6">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">⚡</span>
+              <div>
+                <h3 className="font-semibold text-slate-900">GoHighLevel</h3>
+                <p className="text-xs text-slate-500">Sincroniza contactos y dispara automatizaciones</p>
+              </div>
+            </div>
+            <StatusBadge type="gohighlevel" />
+          </div>
+
+          {integrations.gohighlevel?.enabled ? (
+            <div>
+              {integrations.gohighlevel.display_name && (
+                <p className="text-sm text-slate-600 mb-3">
+                  <span className="font-medium">Cuenta:</span> {integrations.gohighlevel.display_name}
+                </p>
+              )}
+              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-700 mb-3">
+                <p>DIANA crea o actualiza contactos en GHL cuando se captura un lead, y envía el evento de conversión cuando se verifica una compra o cierre real.</p>
+              </div>
+              <TestRow type="gohighlevel" />
+              <ActionButtons type="gohighlevel" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex gap-2 items-start bg-slate-50 rounded-lg p-3 text-xs text-slate-600">
+                <Info className="w-4 h-4 shrink-0 text-slate-400 mt-0.5" />
+                <p>Cada lead capturado por DIANA se crea como contacto en GoHighLevel. Cuando el contacto cierra (compra o calificación verificada), DIANA dispara el tag o workflow que definas.</p>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">1</span>
+                <div className="flex-1">
+                  <label className="label">API Key de GoHighLevel</label>
+                  <input
+                    type="password"
+                    value={manualForm.gohighlevel?.api_key || ''}
+                    onChange={e => updateField('gohighlevel', 'api_key', e.target.value)}
+                    className="input font-mono text-xs"
+                    placeholder="eyJhbGciOi..."
+                  />
+                  <a href="https://app.gohighlevel.com/settings/api_key" target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-1">
+                    <ExternalLink className="w-3 h-3" /> Ajustes → API Key en GoHighLevel
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">2</span>
+                <div className="flex-1">
+                  <label className="label">Location ID (sub-cuenta)</label>
+                  <input
+                    type="text"
+                    value={manualForm.gohighlevel?.location_id || ''}
+                    onChange={e => updateField('gohighlevel', 'location_id', e.target.value)}
+                    className="input font-mono text-xs"
+                    placeholder="Ve8xxxxxxxxxxxxxxx"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    En GHL: andá a tu sub-cuenta → Ajustes → Info del negocio → Location ID (aparece al pie de la página).
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => saveManual('gohighlevel')}
+                disabled={saving.gohighlevel || !manualForm.gohighlevel?.api_key || !manualForm.gohighlevel?.location_id}
+                className="btn-primary w-full"
+              >
+                {saving.gohighlevel ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />}
+                Conectar GoHighLevel
+              </button>
+              <TestRow type="gohighlevel" />
+            </div>
+          )}
+        </div>
+
+        {/* ── ACTIVE CAMPAIGN ───────────────────────────────────────────── */}
+        <div className="card p-6">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">📧</span>
+              <div>
+                <h3 className="font-semibold text-slate-900">ActiveCampaign</h3>
+                <p className="text-xs text-slate-500">Verifica contactos y dispara automatizaciones</p>
+              </div>
+            </div>
+            <StatusBadge type="activecampaign" />
+          </div>
+
+          {integrations.activecampaign?.enabled ? (
+            <div>
+              {integrations.activecampaign.display_name && (
+                <p className="text-sm text-slate-600 mb-3">
+                  <span className="font-medium">Cuenta:</span> {integrations.activecampaign.display_name}
+                </p>
+              )}
+              <TestRow type="activecampaign" />
+              <ActionButtons type="activecampaign" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">1</span>
+                <div className="flex-1">
+                  <label className="label">Nombre de tu cuenta en ActiveCampaign</label>
+                  <input
+                    type="text"
+                    value={manualForm.activecampaign?.account || ''}
+                    onChange={e => updateField('activecampaign', 'account', e.target.value)}
+                    className="input"
+                    placeholder="miempresa"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Es la primera parte de tu URL:{' '}
+                    <span className="font-mono bg-slate-100 px-1 rounded">
+                      {manualForm.activecampaign?.account || 'miempresa'}.activehosted.com
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">2</span>
+                <div className="flex-1">
+                  <label className="label">API Key</label>
+                  <input
+                    type="password"
+                    value={manualForm.activecampaign?.api_key || ''}
+                    onChange={e => updateField('activecampaign', 'api_key', e.target.value)}
+                    className="input font-mono text-xs"
+                    placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  />
+                  {manualForm.activecampaign?.account ? (
+                    <a href={`https://${manualForm.activecampaign.account}.activehosted.com/app/settings/developer`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-1">
+                      <ExternalLink className="w-3 h-3" /> Ir a Configuración → Developer para copiar tu API Key
+                    </a>
+                  ) : (
+                    <p className="text-xs text-slate-400 mt-1">En ActiveCampaign: Configuración → Developer → API Access</p>
+                  )}
+                </div>
+              </div>
+
+              <button
+                onClick={() => saveManual('activecampaign')}
+                disabled={saving.activecampaign || !manualForm.activecampaign?.account || !manualForm.activecampaign?.api_key}
+                className="btn-primary w-full"
+              >
+                {saving.activecampaign ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />}
+                Conectar ActiveCampaign
+              </button>
+              <TestRow type="activecampaign" />
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* ── Sección: Pagos ──────────────────────────────────────────────── */}
+      <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Plataformas de pago</h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* ── STRIPE ───────────────────────────────────────────────────── */}
@@ -275,7 +665,6 @@ function IntegrationsContent() {
           </div>
 
           {integrations.stripe?.enabled ? (
-            /* Connected state */
             <div>
               {integrations.stripe.display_name && (
                 <p className="text-sm text-slate-600 mb-3">
@@ -288,9 +677,8 @@ function IntegrationsContent() {
                   <p>Solo tiene acceso de lectura a tus PaymentIntents.</p>
                 </div>
               )}
-              {/* Webhook reminder */}
               <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600 mb-1">
-                <p className="font-medium text-slate-700 mb-1">Webhook (opcional para verificación en tiempo real)</p>
+                <p className="font-medium text-slate-700 mb-1">Webhook para verificación en tiempo real (opcional)</p>
                 <code className="text-[10px] break-all text-slate-500">
                   {typeof window !== 'undefined' ? window.location.origin : ''}/api/webhooks/stripe
                 </code>
@@ -302,17 +690,11 @@ function IntegrationsContent() {
               <ActionButtons type="stripe" />
             </div>
           ) : (
-            /* Not connected */
             <div className="space-y-3">
-              {stripeOAuthAvailable && (
-                <a
-                  href="/api/oauth/stripe"
-                  className="flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-[#635BFF] hover:bg-[#4F46E5] text-white rounded-lg font-medium text-sm transition-colors"
-                >
-                  <Plug className="w-4 h-4" />
-                  Conectar con Stripe
-                </a>
-              )}
+              <a href="/api/oauth/stripe"
+                className="flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-[#635BFF] hover:bg-[#4F46E5] text-white rounded-lg font-medium text-sm transition-colors">
+                <Plug className="w-4 h-4" /> Conectar con Stripe
+              </a>
               <p className="text-xs text-center text-slate-400">
                 Serás redirigido a Stripe para autorizar el acceso de solo lectura.
               </p>
@@ -325,22 +707,12 @@ function IntegrationsContent() {
                   ].map(f => (
                     <div key={f.key}>
                       <label className="label text-xs">{f.label}</label>
-                      <input
-                        type={f.type || 'text'}
-                        onChange={e => setManualForm(prev => ({
-                          ...prev,
-                          stripe: { ...prev.stripe, [f.key]: e.target.value },
-                        }))}
-                        className="input font-mono text-xs"
-                        placeholder={f.placeholder}
-                      />
+                      <input type={f.type || 'text'}
+                        onChange={e => setManualForm(prev => ({ ...prev, stripe: { ...prev.stripe, [f.key]: e.target.value } }))}
+                        className="input font-mono text-xs" placeholder={f.placeholder} />
                     </div>
                   ))}
-                  <button
-                    onClick={() => saveManual('stripe')}
-                    disabled={saving.stripe}
-                    className="btn-primary text-xs"
-                  >
+                  <button onClick={() => saveManual('stripe')} disabled={saving.stripe} className="btn-primary text-xs">
                     {saving.stripe ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                     Guardar clave
                   </button>
@@ -372,21 +744,15 @@ function IntegrationsContent() {
               )}
               {integrations.mailchimp.connection_method === 'oauth' && (
                 <>
-                  <button
-                    onClick={() => mcListsOpen ? setMcListsOpen(false) : loadMcLists()}
-                    className="flex items-center gap-1 text-xs text-blue-600 hover:underline mb-3"
-                  >
+                  <button onClick={() => mcListsOpen ? setMcListsOpen(false) : loadMcLists()}
+                    className="flex items-center gap-1 text-xs text-blue-600 hover:underline mb-3">
                     <ChevronDown className="w-3 h-3" /> Cambiar audiencia
                   </button>
                   {mcListsOpen && (
                     <div className="mb-3 border border-slate-200 rounded-lg overflow-hidden text-sm">
                       {mcLists.map(l => (
-                        <button
-                          key={l.id}
-                          onClick={() => selectMcList(l.id, l.name)}
-                          disabled={mcSaving}
-                          className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-50 text-left border-b border-slate-100 last:border-0"
-                        >
+                        <button key={l.id} onClick={() => selectMcList(l.id, l.name)} disabled={mcSaving}
+                          className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-50 text-left border-b border-slate-100 last:border-0">
                           <span className="font-medium text-slate-800">{l.name}</span>
                           <span className="text-xs text-slate-400">{l.stats?.member_count?.toLocaleString()} contactos</span>
                         </button>
@@ -401,18 +767,11 @@ function IntegrationsContent() {
             </div>
           ) : (
             <div className="space-y-3">
-              {mailchimpOAuthAvailable && (
-                <a
-                  href="/api/oauth/mailchimp"
-                  className="flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-[#FFE01B] hover:bg-[#f0d000] text-slate-900 rounded-lg font-medium text-sm transition-colors"
-                >
-                  <Plug className="w-4 h-4" />
-                  Conectar con Mailchimp
-                </a>
-              )}
-              <p className="text-xs text-center text-slate-400">
-                Autorizás el acceso a tus audiencias. Podés elegir cuál usar.
-              </p>
+              <a href="/api/oauth/mailchimp"
+                className="flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-[#FFE01B] hover:bg-[#f0d000] text-slate-900 rounded-lg font-medium text-sm transition-colors">
+                <Plug className="w-4 h-4" /> Conectar con Mailchimp
+              </a>
+              <p className="text-xs text-center text-slate-400">Autorizás el acceso a tus audiencias. Podés elegir cuál usar.</p>
               <details className="text-xs text-slate-400">
                 <summary className="cursor-pointer hover:text-slate-600">¿Preferís ingresar la API Key manualmente?</summary>
                 <div className="mt-2 space-y-2 pt-2 border-t border-slate-100">
@@ -422,22 +781,12 @@ function IntegrationsContent() {
                   ].map(f => (
                     <div key={f.key}>
                       <label className="label text-xs">{f.label}</label>
-                      <input
-                        type={f.type || 'text'}
-                        onChange={e => setManualForm(prev => ({
-                          ...prev,
-                          mailchimp: { ...prev.mailchimp, [f.key]: e.target.value },
-                        }))}
-                        className="input font-mono text-xs"
-                        placeholder={f.placeholder}
-                      />
+                      <input type={f.type || 'text'}
+                        onChange={e => setManualForm(prev => ({ ...prev, mailchimp: { ...prev.mailchimp, [f.key]: e.target.value } }))}
+                        className="input font-mono text-xs" placeholder={f.placeholder} />
                     </div>
                   ))}
-                  <button
-                    onClick={() => saveManual('mailchimp')}
-                    disabled={saving.mailchimp}
-                    className="btn-primary text-xs"
-                  >
+                  <button onClick={() => saveManual('mailchimp')} disabled={saving.mailchimp} className="btn-primary text-xs">
                     {saving.mailchimp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                     Guardar
                   </button>
@@ -447,198 +796,11 @@ function IntegrationsContent() {
           )}
         </div>
 
-        {/* ── ACTIVE CAMPAIGN ───────────────────────────────────────────── */}
-        <div className="card p-6">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">📧</span>
-              <div>
-                <h3 className="font-semibold text-slate-900">ActiveCampaign</h3>
-                <p className="text-xs text-slate-500">Verifica contactos y dispara automatizaciones</p>
-              </div>
-            </div>
-            <StatusBadge type="activecampaign" />
-          </div>
-
-          {integrations.activecampaign?.enabled ? (
-            <div>
-              {integrations.activecampaign.display_name && (
-                <p className="text-sm text-slate-600 mb-3">
-                  <span className="font-medium">Cuenta:</span> {integrations.activecampaign.display_name}
-                </p>
-              )}
-              <TestRow type="activecampaign" />
-              <ActionButtons type="activecampaign" />
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {/* Step 1 */}
-              <div className="flex gap-3">
-                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">1</span>
-                <div className="flex-1">
-                  <label className="label">Nombre de tu cuenta en ActiveCampaign</label>
-                  <input
-                    type="text"
-                    value={manualForm.activecampaign?.account || ''}
-                    onChange={e => updateField('activecampaign', 'account', e.target.value)}
-                    className="input"
-                    placeholder="miempresa"
-                  />
-                  <p className="text-xs text-slate-400 mt-1">
-                    Es la primera parte de tu URL:{' '}
-                    <span className="font-mono bg-slate-100 px-1 rounded">
-                      {manualForm.activecampaign?.account || 'miempresa'}.activehosted.com
-                    </span>
-                  </p>
-                </div>
-              </div>
-
-              {/* Step 2 */}
-              <div className="flex gap-3">
-                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">2</span>
-                <div className="flex-1">
-                  <label className="label">API Key</label>
-                  <input
-                    type="password"
-                    value={manualForm.activecampaign?.api_key || ''}
-                    onChange={e => updateField('activecampaign', 'api_key', e.target.value)}
-                    className="input font-mono text-xs"
-                    placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                  />
-                  {manualForm.activecampaign?.account ? (
-                    <a
-                      href={`https://${manualForm.activecampaign.account}.activehosted.com/app/settings/developer`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-1"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      Ir a Configuración → Developer para copiar tu API Key
-                    </a>
-                  ) : (
-                    <p className="text-xs text-slate-400 mt-1">
-                      En AC: Configuración (⚙️) → Developer → API Access
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <button
-                onClick={() => saveManual('activecampaign')}
-                disabled={saving.activecampaign || !manualForm.activecampaign?.account || !manualForm.activecampaign?.api_key}
-                className="btn-primary w-full"
-              >
-                {saving.activecampaign ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />}
-                Conectar ActiveCampaign
-              </button>
-              <TestRow type="activecampaign" />
-            </div>
-          )}
-        </div>
-
-        {/* ── META CAPI ─────────────────────────────────────────────────── */}
-        <div className="card p-6">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">🎯</span>
-              <div>
-                <h3 className="font-semibold text-slate-900">Meta (Facebook) CAPI</h3>
-                <p className="text-xs text-slate-500">Eventos server-side · bypasea adblockers</p>
-              </div>
-            </div>
-            <StatusBadge type="meta" />
-          </div>
-
-          {integrations.meta?.enabled ? (
-            <div>
-              {integrations.meta.display_name && (
-                <p className="text-sm text-slate-600 mb-3">
-                  <span className="font-medium">Pixel:</span> {integrations.meta.display_name}
-                </p>
-              )}
-              <TestRow type="meta" />
-              <ActionButtons type="meta" />
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {/* Step guide */}
-              <div className="flex gap-3">
-                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">1</span>
-                <div className="flex-1">
-                  <label className="label">Pixel ID</label>
-                  <input
-                    type="text"
-                    value={manualForm.meta?.pixel_id || ''}
-                    onChange={e => updateField('meta', 'pixel_id', e.target.value)}
-                    className="input font-mono text-xs"
-                    placeholder="1234567890123456"
-                  />
-                  <a
-                    href="https://business.facebook.com/events_manager"
-                    target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-1"
-                  >
-                    <ExternalLink className="w-3 h-3" /> Encontrar en Events Manager
-                  </a>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">2</span>
-                <div className="flex-1">
-                  <label className="label">Access Token (CAPI)</label>
-                  <input
-                    type="password"
-                    value={manualForm.meta?.access_token || ''}
-                    onChange={e => updateField('meta', 'access_token', e.target.value)}
-                    className="input font-mono text-xs"
-                    placeholder="EAAxxxxxxxx..."
-                  />
-                  <a
-                    href="https://business.facebook.com/events_manager"
-                    target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-1"
-                  >
-                    <ExternalLink className="w-3 h-3" /> Events Manager → Tu Pixel → Settings → Generate Access Token
-                  </a>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-500 text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">3</span>
-                <div className="flex-1">
-                  <label className="label">Test Event Code <span className="text-slate-400 font-normal">(opcional)</span></label>
-                  <input
-                    type="text"
-                    value={manualForm.meta?.test_event_code || ''}
-                    onChange={e => updateField('meta', 'test_event_code', e.target.value)}
-                    className="input font-mono text-xs"
-                    placeholder="TEST12345"
-                  />
-                  <p className="text-xs text-slate-400 mt-1">Solo para pruebas. Quitar en producción.</p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => saveManual('meta')}
-                disabled={saving.meta || !manualForm.meta?.pixel_id || !manualForm.meta?.access_token}
-                className="btn-primary w-full"
-              >
-                {saving.meta ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />}
-                Conectar Meta CAPI
-              </button>
-              <TestRow type="meta" />
-            </div>
-          )}
-        </div>
-
       </div>
     </div>
   );
 }
 
-// Suspense wrapper — required because IntegrationsContent uses useSearchParams()
-// Without this, Next.js 14 causes a hydration mismatch on server render
 export default function IntegrationsPage() {
   return (
     <Suspense fallback={
